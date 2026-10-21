@@ -1,0 +1,216 @@
+
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="theme-color" content="#172033">
+<title>Ma Blu-rayothèque</title>
+<style>
+:root{color-scheme:dark;--bg:#101522;--panel:#1b2435;--accent:#70a5ff;--text:#f4f6fb;--muted:#aab5c8}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--text);font-family:system-ui,Arial,sans-serif}
+header{padding:24px 16px;background:#172033;border-bottom:1px solid #344057}
+h1{font-size:25px;margin:0 0 6px}
+p{color:var(--muted);margin:5px 0}
+main{max-width:1000px;margin:auto;padding:16px}
+.panel{background:var(--panel);padding:16px;border-radius:14px;margin-bottom:18px}
+h2{font-size:19px;margin:0 0 14px}
+label{display:block;font-size:14px;color:var(--muted);margin:12px 0 5px}
+input,select,button{font:inherit;border-radius:9px;padding:11px;border:1px solid #43506a}
+input,select{width:100%;background:#111a29;color:var(--text)}
+button{background:var(--accent);color:#101522;font-weight:650;border:0;cursor:pointer}
+button.secondary{background:#354158;color:white}
+button.danger{background:#713844;color:white}
+.actions{display:flex;gap:8px;flex-wrap:wrap;margin-top:14px}
+.searchrow{display:grid;grid-template-columns:1fr;gap:10px;margin-bottom:14px}
+.grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}
+.card{min-width:0;background:var(--panel);border-radius:12px;overflow:hidden;border:1px solid #303b50}
+.poster{width:100%;aspect-ratio:2/3;object-fit:cover;background:#283348;display:block}
+.placeholder{aspect-ratio:2/3;display:flex;align-items:center;justify-content:center;font-size:45px;background:#283348}
+.info{padding:10px}
+.info h3{font-size:16px;margin:0 0 6px;overflow-wrap:anywhere}
+.info p{font-size:13px;overflow-wrap:anywhere}
+.cardbuttons{display:flex;gap:6px;margin-top:10px}
+.cardbuttons button{padding:8px 10px;flex:1;font-size:13px}
+#count{color:var(--muted);margin:8px 0 14px}
+.note{font-size:13px;color:var(--muted);line-height:1.5}
+@media(min-width:650px){.grid{grid-template-columns:repeat(4,minmax(0,1fr))}.searchrow{grid-template-columns:1fr 190px}.fields{display:grid;grid-template-columns:1fr 1fr;gap:0 12px}}
+</style>
+</head>
+<body>
+<header>
+  <h1>🎬 Ma Blu-rayothèque</h1>
+  <p>Ma collection de films, toujours à portée de main.</p>
+</header>
+<main>
+<section class="panel">
+<h2 id="formTitle">➕ Ajouter un Blu-ray</h2>
+<form id="filmForm">
+<input type="hidden" id="filmId">
+<div class="fields">
+<div>
+<label for="title">Titre du film *</label>
+<input id="title" required maxlength="150" placeholder="Ex. Le Seigneur des anneaux">
+</div>
+<div>
+<label for="year">Année</label>
+<input id="year" type="number" min="1888" max="2100" placeholder="Ex. 2001">
+</div>
+<div>
+<label for="genre">Genre</label>
+<input id="genre" maxlength="80" placeholder="Ex. Fantastique">
+</div>
+<div>
+<label for="edition">Édition / version</label>
+<input id="edition" maxlength="120" placeholder="Ex. Steelbook, 4K, collector">
+</div>
+</div>
+<label for="poster">Affiche du film (image sur ton téléphone)</label>
+<input id="poster" type="file" accept="image/*">
+<p class="note">L'affiche choisie sera enregistrée avec ta collection sur cet appareil.</p>
+<div class="actions">
+<button type="submit" id="saveBtn">Enregistrer le film</button>
+<button type="button" class="secondary" id="cancelBtn" hidden>Annuler la modification</button>
+</div>
+</form>
+</section>
+
+<section>
+<h2>📚 Ma collection</h2>
+<div class="searchrow">
+<input id="search" type="search" placeholder="🔎 Rechercher un film…">
+<select id="sort" aria-label="Trier la collection">
+<option value="az">Titre : A → Z</option>
+<option value="za">Titre : Z → A</option>
+<option value="new">Année : plus récente</option>
+<option value="old">Année : plus ancienne</option>
+</select>
+</div>
+<p id="count">0 film</p>
+<div id="films" class="grid"></div>
+<p id="empty" class="note">Ta collection est vide. Ajoute ton premier Blu-ray ci-dessus !</p>
+</section>
+<p class="note">🔒 Les données sont stockées localement dans ton navigateur. Pense à exporter régulièrement ta collection pour en garder une copie.</p>
+<div class="actions" style="margin:20px 0">
+<button class="secondary" id="exportBtn">Exporter ma collection</button>
+<button class="secondary" id="importBtn">Importer une sauvegarde</button>
+<input type="file" id="importFile" accept=".json,application/json" hidden>
+</div>
+</main>
+<script>
+const $=id=>document.getElementById(id);
+const KEY="ma-blurayotheque-films-v1";
+let films=[];
+try{films=JSON.parse(localStorage.getItem(KEY)||"[]");if(!Array.isArray(films))films=[]}catch(e){films=[]}
+
+function persist(){
+ try{localStorage.setItem(KEY,JSON.stringify(films));return true}
+ catch(e){alert("Stockage plein. Essaie une image plus petite ou supprime des affiches.");return false}
+}
+function esc(s){return String(s??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]))}
+function render(){
+ const q=$("search").value.trim().toLocaleLowerCase("fr");
+ const mode=$("sort").value;
+ let list=films.filter(f=>[f.title,f.year,f.genre,f.edition].join(" ").toLocaleLowerCase("fr").includes(q));
+ list.sort((a,b)=>{
+  if(mode==="za")return b.title.localeCompare(a.title,"fr");
+  if(mode==="new")return (Number(b.year)||0)-(Number(a.year)||0)||a.title.localeCompare(b.title,"fr");
+  if(mode==="old")return (Number(a.year)||9999)-(Number(b.year)||9999)||a.title.localeCompare(b.title,"fr");
+  return a.title.localeCompare(b.title,"fr");
+ });
+ $("count").textContent=list.length+" film"+(list.length>1?"s":"")+(q?" trouvé"+(list.length>1?"s":""):"");
+ $("empty").hidden=list.length>0;
+ $("films").innerHTML=list.map(f=>`
+ <article class="card">
+ ${f.poster?`<img class="poster" src="${f.poster}" alt="Affiche de ${esc(f.title)}">`:`<div class="placeholder">🎬</div>`}
+ <div class="info">
+ <h3>${esc(f.title)}</h3>
+ <p>${esc(f.year||"Année inconnue")}</p>
+ <p>${esc(f.genre||"Genre non précisé")}</p>
+ <p>${esc(f.edition||"Édition non précisée")}</p>
+ <div class="cardbuttons">
+ <button class="secondary" data-edit="${esc(f.id)}">Modifier</button>
+ <button class="danger" data-delete="${esc(f.id)}">Supprimer</button>
+ </div></div></article>`).join("");
+}
+function resetForm(){
+ $("filmForm").reset();$("filmId").value="";$("formTitle").textContent="➕ Ajouter un Blu-ray";
+ $("saveBtn").textContent="Enregistrer le film";$("cancelBtn").hidden=true;
+}
+$("filmForm").addEventListener("submit",async e=>{
+ e.preventDefault();
+ const id=$("filmId").value;
+ const old=films.find(f=>f.id===id);
+ let poster=old?.poster||"";
+ const file=$("poster").files[0];
+ if(file){
+  if(file.size>2*1024*1024){alert("Cette image dépasse 2 Mo. Choisis une image plus petite.");return}
+  poster=await new Promise((resolve,reject)=>{
+   const reader=new FileReader();
+   reader.onload=()=>resolve(reader.result);
+   reader.onerror=reject;
+   reader.readAsDataURL(file);
+  }).catch(()=>null);
+  if(!poster){alert("Impossible de lire cette image.");return}
+ }
+ const film={
+  id:id||String(Date.now())+Math.random().toString(16).slice(2),
+  title:$("title").value.trim(),
+  year:$("year").value,
+  genre:$("genre").value.trim(),
+  edition:$("edition").value.trim(),
+  poster
+ };
+ if(!film.title)return;
+ const previous=films.slice();
+ if(id)films=films.map(f=>f.id===id?film:f);
+ else films.push(film);
+ if(!persist()){films=previous;return}
+ resetForm();render();
+});
+$("cancelBtn").addEventListener("click",resetForm);
+$("search").addEventListener("input",render);
+$("sort").addEventListener("change",render);
+$("films").addEventListener("click",e=>{
+ const edit=e.target.closest("[data-edit]");
+ const del=e.target.closest("[data-delete]");
+ if(edit){
+  const f=films.find(x=>x.id===edit.dataset.edit);if(!f)return;
+  $("filmId").value=f.id;$("title").value=f.title;$("year").value=f.year;
+  $("genre").value=f.genre;$("edition").value=f.edition;$("poster").value="";
+  $("formTitle").textContent="✏️ Modifier le Blu-ray";
+  $("saveBtn").textContent="Enregistrer les modifications";
+  $("cancelBtn").hidden=false;
+  window.scrollTo({top:0,behavior:"smooth"});
+ }
+ if(del){
+  const f=films.find(x=>x.id===del.dataset.delete);if(!f)return;
+  if(confirm('Supprimer « '+f.title+' » de la collection ?')){
+   const old=films.slice();films=films.filter(x=>x.id!==f.id);
+   if(!persist())films=old;
+   render();
+  }
+ }
+});
+$("exportBtn").addEventListener("click",()=>{
+ const blob=new Blob([JSON.stringify(films,null,2)],{type:"application/json"});
+ const url=URL.createObjectURL(blob);const a=document.createElement("a");
+ a.href=url;a.download="ma-blurayotheque.json";a.click();URL.revokeObjectURL(url);
+});
+$("importBtn").addEventListener("click",()=>$("importFile").click());
+$("importFile").addEventListener("change",async e=>{
+ const file=e.target.files[0];if(!file)return;
+ try{
+  const data=JSON.parse(await file.text());
+  if(!Array.isArray(data)||!data.every(f=>f&&typeof f.title==="string"))throw Error();
+  if(!confirm("Remplacer la collection actuelle par les "+data.length+" films de la sauvegarde ?"))return;
+  const old=films;films=data.map(f=>({...f,id:String(f.id||Date.now()+Math.random())}));
+  if(!persist())films=old;render();
+ }catch(err){alert("Fichier de sauvegarde invalide.");}
+ e.target.value="";
+});
+render();
+</script>
+</body>
+</html>
